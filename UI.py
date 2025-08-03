@@ -1,57 +1,130 @@
 import tkinter as tk
-from tkinter import PhotoImage
-from spell import correction  # Import the correction function from spell.py
+from tkinter import messagebox
+from collections import Counter
+import re
 
-# Function to handle button click and show the corrected word
-def on_button_click():
-    global message_label  # Declare message_label as a global variable
-    # Read the text from the entry widget
-    entered_text = entry_var.get()
-    # Get the corrected word using the spell correction function
-    corrected_word = correction(entered_text)
-    # Destroy the previous message label, if it exists
-    if message_label:
-        message_label.destroy()
-    # Create a label with the corrected word
-    message_label = tk.Label(frame, text=corrected_word, font=("Helvetica", 14), bg="#E6E6FA", fg="#f0f0f0")
-    message_label.pack(pady=(10, 0))
-    fade_in(message_label)
+# ---------------------- Spelling Logic ----------------------
 
-# Function to gradually change the color of the label
-def fade_in(widget, step=0):
-    new_color = f"#{step:02x}{step:02x}{step:02x}"
-    widget.config(fg=new_color)
-    if step < 0xFF:
-        widget.after(50, fade_in, widget, step + 10)
+# Extracts all lowercase words from text
+def words(text):
+    return re.findall(r'\w+', text.lower())
 
-# Create the main application window
+# Read words from a text file and count their frequencies
+with open('D:\\python\\spell cheaker\\test.txt', 'r') as file:
+    WORDS = Counter(words(file.read()))
+
+# Probability of a word appearing in the dataset
+def P(word, N=sum(WORDS.values())):
+    return WORDS[word] / N
+
+# Returns the most probable correction for a given word
+def correction(word):
+    return max(candidates(word), key=P)
+
+# Generates all possible spelling candidates for a word
+def candidates(word):
+    return known([word]) or known(edits1(word)) or known(edits2(word)) or [word]
+
+# Filters the list to only include known words from the dataset
+def known(words):
+    return set(w for w in words if w in WORDS)
+
+# Generates all edits that are one edit away from the input word
+def edits1(word):
+    letters = 'abcdefghijklmnopqrstuvwxyz'
+    splits = [(word[:i], word[i:]) for i in range(len(word) + 1)]
+    deletes = [L + R[1:] for L, R in splits if R]                     # Delete one letter
+    transposes = [L + R[1] + R[0] + R[2:] for L, R in splits if len(R) > 1]  # Swap adjacent letters
+    replaces = [L + c + R[1:] for L, R in splits if R for c in letters]     # Replace a letter
+    inserts = [L + c + R for L, R in splits for c in letters]               # Insert a letter
+    return set(deletes + transposes + replaces + inserts)
+
+# Generates edits that are two edits away from the word
+def edits2(word):
+    return (e2 for e1 in edits1(word) for e2 in edits1(e1))
+
+# ---------------------- UI Functions ----------------------
+
+# Triggered when "Correct" button is pressed
+def correct_spelling():
+    input_word = entry.get()
+    if not input_word:
+        messagebox.showwarning("Input Error", "Please enter a word.")
+        return
+    corrected_word = correction(input_word)
+    result_label.config(text=f"✅ Corrected: {corrected_word}", fg="#1a936f")
+
+# Shows suggestion list as user types
+def show_suggestions(event):
+    typed_word = entry.get()
+    suggestion_listbox.delete(0, tk.END)
+
+    if typed_word.strip():
+        sugg = list(candidates(typed_word))[:5]  # Show top 5 suggestions
+        for word in sugg:
+            suggestion_listbox.insert(tk.END, word)
+        suggestion_listbox.place(x=entry.winfo_x(), y=entry.winfo_y() + entry.winfo_height() + 2)
+    else:
+        suggestion_listbox.place_forget()
+
+# Fills the entry box when a suggestion is clicked
+def fill_suggestion(event):
+    if suggestion_listbox.curselection():
+        selected = suggestion_listbox.get(suggestion_listbox.curselection())
+        entry.delete(0, tk.END)
+        entry.insert(0, selected)
+        suggestion_listbox.place_forget()
+
+# ---------------------- UI Setup ----------------------
+
+# Main window setup
 root = tk.Tk()
-root.title("Word Entry App")
+root.title("🧠 AI Spelling Corrector")
+root.geometry("600x450")  # Set window size
+root.config(bg="#f4f4f4")  # Set background color
 
-# Set the minimum size of the window
-root.minsize(400, 200)
+# Title label
+title_label = tk.Label(root, text="🔍 Spell Checker with Suggestions", font=("Helvetica", 18, "bold"), bg="#f4f4f4", fg="#114b5f")
+title_label.pack(pady=10)
 
-# Create a frame for better layout management
-frame = tk.Frame(root, bg="#E6E6FA")  # Lavender background color
-frame.pack(fill=tk.BOTH, expand=True)
+# Main content frame
+card = tk.Frame(root, bg="#ffffff", bd=2, relief="groove")
+card.pack(padx=20, pady=10, fill="both", expand=True)
 
-# Create a label to prompt the user
-label = tk.Label(frame, text="Enter a word:", font=("Helvetica", 14), bg="#E6E6FA")  # Lavender background color
-label.pack(pady=(10, 5))
+# Label for entry
+entry_label = tk.Label(card, text="Enter a word:", font=("Arial", 12), bg="#ffffff")
+entry_label.pack(pady=(20, 5))
 
-# Create a StringVar to hold the entry text
-entry_var = tk.StringVar()
+# Entry box for user input
+entry = tk.Entry(card, font=("Arial", 14), width=30, justify="center", relief="solid", bd=1)
+entry.pack()
 
-# Create an entry widget for user input
-entry = tk.Entry(frame, textvariable=entry_var, width=50, font=("Helvetica", 12))
-entry.pack(pady=(5, 10))
+# Suggestion listbox
+suggestion_listbox = tk.Listbox(card, font=("Arial", 12), height=5, width=30)
+suggestion_listbox.bind("<<ListboxSelect>>", fill_suggestion)
+entry.bind("<KeyRelease>", show_suggestions)
 
-# Create a global variable to hold the message label
-message_label = None
+# Spacer to create gap before button
+tk.Label(card, text="", bg="#ffffff").pack(pady=40)
 
-# Create a button and assign the click handler
-button = tk.Button(frame, text="Submit", font=("Helvetica", 12), bg="#4CAF50", fg="white", activebackground="#45a049", command=on_button_click)
-button.pack(pady=(10, 20))
+# Button hover effects
+def on_enter(e): correct_button.config(bg="#333", fg="#fff")
+def on_leave(e): correct_button.config(bg="#1a936f", fg="#fff")
 
-# Run the application
+# "Correct" button
+correct_button = tk.Button(
+    card, text="Correct", font=("Arial", 12, "bold"),
+    bg="#1a936f", fg="white", padx=10, pady=5,
+    relief="flat", activebackground="#114b5f", activeforeground="white",
+    command=correct_spelling
+)
+correct_button.pack()
+correct_button.bind("<Enter>", on_enter)
+correct_button.bind("<Leave>", on_leave)
+
+# Label to show result
+result_label = tk.Label(card, text="", font=("Arial", 14, "bold"), bg="#ffffff", fg="#1a936f")
+result_label.pack(pady=(20, 20))
+
+# Run the GUI application
 root.mainloop()
